@@ -1,0 +1,48 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis:/data]
+    restart: unless-stopped
+
+  bot:
+    build: .
+    command: ["python", "-m", "app.bot.main"]
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - data:/data
+      - bot-api:/var/lib/telegram-bot-api:ro
+    depends_on: [redis]
+    restart: unless-stopped
+
+  # Обработчики очереди. Больше мощности: docker compose up -d --scale worker=3
+  worker:
+    build: .
+    command: ["arq", "app.worker.WorkerSettings"]
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - data:/data
+      - bot-api:/var/lib/telegram-bot-api:ro
+    depends_on: [redis]
+    restart: unless-stopped
+
+  # Необязательно: свой сервер Bot API — файлы до 2 ГБ
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    profiles: [bigfiles]
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_LOCAL: "1"
+    volumes:
+      - bot-api:/var/lib/telegram-bot-api
+    restart: unless-stopped
+
+volumes:
+  redis:
+  data:
+  bot-api:
